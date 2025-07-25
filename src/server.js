@@ -1,8 +1,16 @@
 const express = require('express');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
 const path = require('path');
 const InputValidator = require('./utils/inputValidator');
 
 const app = express();
+const validator = new InputValidator();
+
+// Middleware
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, '../public')));
 
 app.disable('x-powered-by');
 app.use((req, res, next) => {
@@ -67,6 +75,29 @@ app.post('/search', (req, res) => {
             type: validation.type
         });
     }
+});
+
+// Create servers
+const httpPort = process.env.HTTP_PORT || 80;
+const httpsPort = process.env.HTTPS_PORT || 443;
+
+// Try to create HTTPS server if certificates exist
+if (fs.existsSync('./ssl/cert.pem') && fs.existsSync('./ssl/key.pem')) {
+    const httpsOptions = {
+        key: fs.readFileSync('./ssl/key.pem'),
+        cert: fs.readFileSync('./ssl/cert.pem')
+    };
+
+    https.createServer(httpsOptions, app).listen(httpsPort, () => {
+        console.log(`HTTPS Server is running on port ${httpsPort}`);
+    });
+} else {
+    console.log('SSL certificates not found, HTTPS server not started');
+}
+
+// Always create HTTP server as fallback
+http.createServer(app).listen(httpPort, () => {
+    console.log(`HTTP Server is running on port ${httpPort}`);
 });
 
 const PORT = process.env.PORT || 80;
