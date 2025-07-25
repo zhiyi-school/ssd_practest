@@ -1,264 +1,155 @@
 class InputValidator {
     constructor() {
-        // Common XSS attack patterns - COMPLETELY FIXED for ReDoS prevention
+        // Simplified XSS patterns with bounded quantifiers
         this.xssPatterns = [
-            // FIXED: Replaced complex nested quantifiers with bounded alternatives
-            /<script\b[^<]{0,500}(?:(?!<\/script>)[^<]){0,200}<\/script>/gi,
+            /<script\b[^<]{0,500}<\/script>/gi,
             /javascript:/gi,
             /on\w+\s{0,5}=/gi,
-            /<iframe/gi,
-            /<object/gi,
-            /<embed/gi,
-            /<link/gi,
-            /<meta/gi,
-            /<style/gi,
+            /<(iframe|object|embed|link|meta|style)\b/gi,
             /vbscript:/gi,
             /data:text\/html/gi,
             /<img[^>]{0,500}src[^>]{0,200}=/gi,
             /expression\s{0,5}\(/gi,
-            /url\s{0,5}\(/gi,
             /<[^>]{0,200}\s(?:on\w+|href|src)\s{0,5}=\s{0,5}['"]{0,3}javascript:/gi
         ];
 
-        // SQL injection patterns - ALL SAFE from ReDoS
+        // Simplified SQL injection patterns
         this.sqlInjectionPatterns = [
-            // Classic SQL injection patterns with quotes and operators - limited quantifiers
-            /['"`]\s{0,5}(?:OR|AND)\s{0,5}['"`]/gi,
-            /['"`]\s{0,5}(?:OR|AND)\s{0,5}\d+\s{0,5}=\s{0,5}\d+/gi,
-            /['"`]\s{0,5}(?:OR|AND)\s{0,5}\d+\s{0,5}<\s{0,5}\d+/gi,
-            /['"`]\s{0,5}(?:OR|AND)\s{0,5}\d+\s{0,5}>\s{0,5}\d+/gi,
-            
-            // UNION based attacks
+            /['"`]\s{0,5}(?:OR|AND)\s{0,5}['"`\d]/gi,
             /UNION\s+(?:ALL\s+)?SELECT/gi,
-            /'\s{0,5}UNION/gi,
-            /"\s{0,5}UNION/gi,
-            
-            // Comment-based attacks - limited whitespace
-            /;\s{0,5}--/gi,
-            /'\s{0,5}--/gi,
-            /"\s{0,5}--/gi,
-            /;\s{0,5}\/\*/gi,
-            /'\s{0,5}\/\*/gi,
-            /"\s{0,5}\/\*/gi,
-            
-            // Classic injection with quotes - limited quantifiers
-            /'\s{0,5}OR\s{0,5}'[^']{0,100}'\s{0,5}=\s{0,5}'/gi,
-            /"\s{0,5}OR\s{0,5}"[^"]{0,100}"\s{0,5}=\s{0,5}"/gi,
-            /'\s{0,5}OR\s{0,5}1\s{0,5}=\s{0,5}1/gi,
-            /"\s{0,5}OR\s{0,5}1\s{0,5}=\s{0,5}1/gi,
-            
-            // SQL commands with terminators - limited whitespace
-            /;\s{0,5}(?:DROP|DELETE|UPDATE|INSERT|CREATE|ALTER)\s/gi,
-            /'\s{0,5};\s{0,5}(?:DROP|DELETE|UPDATE|INSERT|CREATE|ALTER)/gi,
-            /"\s{0,5};\s{0,5}(?:DROP|DELETE|UPDATE|INSERT|CREATE|ALTER)/gi,
-            
-            // Hex encoded attacks - simplified patterns
+            /[;'"]\s{0,5}(?:--|\/\*)/gi,
+            /[;'"]\s{0,5}(?:DROP|DELETE|UPDATE|INSERT|CREATE|ALTER)/gi,
             /(?:%27|')\s{0,5}(?:%6F|o)\s{0,5}(?:%72|r)/gi,
-            /(?:%27|')\s{0,5}(?:%55|u)\s{0,5}(?:%4E|n)\s{0,5}(?:%49|i)\s{0,5}(?:%4F|o)\s{0,5}(?:%4E|n)/gi,
-            
-            // Specific dangerous patterns
-            /exec\s+(?:s|x)p\w+/gi,
-            /sp_\w+/gi,
-            /xp_\w+/gi,
-            
-            // Boolean-based blind SQL injection - COMPLETELY SAFE: bounded quantifiers
-            /\d{1,10}\s{0,3}=\s{0,3}\d{1,10}\s{0,3}--/gi,
-            /\d{1,10}\s{0,3}=\s{0,3}\d{1,10}\s{0,3}#/gi,
-            
-            // Time-based blind SQL injection
-            /WAITFOR\s+DELAY/gi,
-            /SLEEP\s{0,3}\(/gi,
-            /BENCHMARK\s{0,3}\(/gi,
-            
-            // Stacked queries - limited whitespace
-            /;\s{0,5}SELECT/gi,
-            /;\s{0,5}INSERT/gi,
-            /;\s{0,5}UPDATE/gi,
-            /;\s{0,5}DELETE/gi
+            /exec\s+[sx]p\w+/gi,
+            /\d{1,10}\s{0,3}=\s{0,3}\d{1,10}\s{0,3}[--#]/gi,
+            /(?:WAITFOR\s+DELAY|SLEEP\s{0,3}\(|BENCHMARK\s{0,3}\()/gi,
+            /;\s{0,5}(?:SELECT|INSERT|UPDATE|DELETE)/gi
         ];
+
+        // Configuration
+        this.config = {
+            maxInputLength: 10000,
+            maxValidLength: 1000,
+            maxExecutionTime: 30,
+            maxPatternTime: 5,
+            maxSuspiciousTime: 15,
+            maxEncodedLength: 200,
+            maxDecodedLength: 400
+        };
     }
 
     validateInput(input) {
+        if (!input || typeof input !== 'string') {
+            return this.createResult(false, ['Invalid input provided'], 'invalid');
+        }
+
+        if (input.length > this.config.maxInputLength) {
+            return this.createResult(false, ['Input is too long'], 'invalid');
+        }
+
+        if (this.containsAttack(input, this.xssPatterns, 'XSS')) {
+            return this.createResult(false, ['Input contains potentially malicious content (XSS)'], 'xss');
+        }
+
+        if (this.containsAttack(input, this.sqlInjectionPatterns, 'SQL')) {
+            return this.createResult(false, ['Input contains potentially malicious content (SQL Injection)'], 'sqli');
+        }
+
         const errors = [];
         
-        if (!input || typeof input !== 'string') {
-            errors.push('Invalid input provided');
-            return { isValid: false, errors, type: 'invalid' };
+        if (input.length > this.config.maxValidLength) {
+            errors.push(`Input is too long (maximum ${this.config.maxValidLength} characters)`);
         }
 
-        // Prevent processing of extremely long inputs to avoid ReDoS
-        if (input.length > 10000) {
-            return { isValid: false, errors: ['Input is too long'], type: 'invalid' };
-        }
-
-        // Check for XSS attacks with enhanced timeout protection
-        if (this.containsXSS(input)) {
-            return { isValid: false, errors: ['Input contains potentially malicious content (XSS)'], type: 'xss' };
-        }
-
-        // Check for SQL injection with enhanced timeout protection
-        if (this.containsSQLInjection(input)) {
-            return { isValid: false, errors: ['Input contains potentially malicious content (SQL Injection)'], type: 'sqli' };
-        }
-
-        // Additional validation: length check
-        if (input.length > 1000) {
-            errors.push('Input is too long (maximum 1000 characters)');
-        }
-
-        // Check for suspicious character sequences
         if (this.containsSuspiciousPatterns(input)) {
             errors.push('Input contains suspicious patterns');
         }
 
-        return {
-            isValid: errors.length === 0,
-            errors: errors,
-            type: 'valid'
-        };
+        return this.createResult(errors.length === 0, errors, 'valid');
     }
 
-    containsXSS(input) {
-        // Circuit breaker pattern with strict timeout controls
+    containsAttack(input, patterns, type) {
         try {
             const startTime = Date.now();
-            const maxExecutionTime = 30; // Reduced for safety
             
-            // Early termination for extremely long inputs
-            if (input.length > 5000) {
-                return true;
-            }
+            if (input.length > 5000) return true;
             
-            for (let i = 0; i < this.xssPatterns.length; i++) {
-                // Global timeout check
-                if (Date.now() - startTime > maxExecutionTime) {
-                    console.warn('XSS validation timeout exceeded');
-                    return true; // Fail-safe: assume malicious
+            for (let i = 0; i < patterns.length; i++) {
+                if (this.isTimeout(startTime, this.config.maxExecutionTime)) {
+                    console.warn(`${type} validation timeout exceeded`);
+                    return true;
                 }
                 
-                const pattern = this.xssPatterns[i];
-                pattern.lastIndex = 0; // Reset for global regex
-                
-                // Individual pattern timeout protection
-                const patternStart = Date.now();
-                try {
-                    const result = pattern.test(input);
-                    
-                    // Check individual pattern execution time
-                    if (Date.now() - patternStart > 5) {
-                        console.warn(`XSS pattern ${i} execution time exceeded`);
-                        return true; // Fail-safe
-                    }
-                    
-                    if (result) {
-                        return true;
-                    }
-                } catch (regexError) {
-                    console.warn(`XSS regex error for pattern ${i}:`, regexError.message);
-                    return true; // Fail-safe
+                if (this.testPattern(patterns[i], input, type, i)) {
+                    return true;
                 }
             }
+            
             return false;
         } catch (error) {
-            console.warn('XSS validation error:', error.message);
-            return true; // Fail-safe
+            console.warn(`${type} validation error:`, error.message);
+            return true;
         }
     }
 
-    containsSQLInjection(input) {
-        // Circuit breaker pattern with strict timeout controls
+    testPattern(pattern, input, type, index) {
+        pattern.lastIndex = 0;
+        const patternStart = Date.now();
+        
         try {
-            const startTime = Date.now();
-            const maxExecutionTime = 30; // Reduced for safety
+            const result = pattern.test(input);
             
-            // Early termination for extremely long inputs
-            if (input.length > 5000) {
+            if (this.isTimeout(patternStart, this.config.maxPatternTime)) {
+                console.warn(`${type} pattern ${index} execution time exceeded`);
                 return true;
             }
             
-            for (let i = 0; i < this.sqlInjectionPatterns.length; i++) {
-                // Global timeout check
-                if (Date.now() - startTime > maxExecutionTime) {
-                    console.warn('SQL injection validation timeout exceeded');
-                    return true; // Fail-safe: assume malicious
-                }
-                
-                const pattern = this.sqlInjectionPatterns[i];
-                pattern.lastIndex = 0; // Reset for global regex
-                
-                // Individual pattern timeout protection
-                const patternStart = Date.now();
-                try {
-                    const result = pattern.test(input);
-                    
-                    // Check individual pattern execution time
-                    if (Date.now() - patternStart > 5) {
-                        console.warn(`SQL injection pattern ${i} execution time exceeded`);
-                        return true; // Fail-safe
-                    }
-                    
-                    if (result) {
-                        return true;
-                    }
-                } catch (regexError) {
-                    console.warn(`SQL injection regex error for pattern ${i}:`, regexError.message);
-                    return true; // Fail-safe
-                }
-            }
-            return false;
-        } catch (error) {
-            console.warn('SQL injection validation error:', error.message);
-            return true; // Fail-safe
+            return result;
+        } catch (regexError) {
+            console.warn(`${type} regex error for pattern ${index}:`, regexError.message);
+            return true;
         }
     }
 
     containsSuspiciousPatterns(input) {
         try {
             const startTime = Date.now();
-            const maxExecutionTime = 15; // Very short timeout
             
-            // Early exit for long inputs
-            if (input.length > 2000) {
-                return true;
-            }
+            if (input.length > 2000) return true;
             
-            // Check for excessive special characters - completely safe pattern
-            const suspiciousChars = /[<>'";&|(){}[\]]{3,10}/;
-            if (Date.now() - startTime > maxExecutionTime) return true;
-            if (suspiciousChars.test(input)) {
-                return true;
-            }
+            // Check for excessive special characters
+            if (this.isTimeout(startTime, this.config.maxSuspiciousTime)) return true;
+            if (/[<>'";&|(){}[\]]{3,10}/.test(input)) return true;
 
-            // Check for multiple SQL-like operators - completely safe pattern
-            const sqlOperators = /[=<>!]{2,5}/;
-            if (Date.now() - startTime > maxExecutionTime) return true;
-            if (sqlOperators.test(input)) {
-                return true;
-            }
+            // Check for multiple operators
+            if (this.isTimeout(startTime, this.config.maxSuspiciousTime)) return true;
+            if (/[=<>!]{2,5}/.test(input)) return true;
 
-            // Check for encoded attacks with very strict limits
-            if (/%[0-9a-fA-F]{2}/.test(input)) {
-                try {
-                    // Extremely restrictive limits
-                    if (input.length > 200) {
-                        return true;
-                    }
-                    const decoded = decodeURIComponent(input);
-                    if (decoded.length > 400) {
-                        return true;
-                    }
-                    // No recursive calls to prevent ReDoS
-                    return decoded !== input; // Simple check for encoding
-                } catch (e) {
-                    return true; // Invalid encoding
-                }
-            }
-
-            return false;
+            // Check for URL encoding
+            return this.checkUrlEncoding(input);
+            
         } catch (error) {
             console.warn('Suspicious pattern validation error:', error.message);
-            return true; // Fail-safe
+            return true;
         }
+    }
+
+    checkUrlEncoding(input) {
+        if (/%[0-9a-fA-F]{2}/.test(input)) {
+            try {
+                if (input.length > this.config.maxEncodedLength) return true;
+                
+                const decoded = decodeURIComponent(input);
+                
+                if (decoded.length > this.config.maxDecodedLength) return true;
+                
+                return decoded !== input;
+            } catch (e) {
+                console.warn('URL decoding failed - potentially malformed input:', e.message);
+                return true;
+            }
+        }
+        return false;
     }
 
     sanitizeInput(input) {
@@ -266,12 +157,10 @@ class InputValidator {
             return '';
         }
 
-        // Strict input length limits
         if (input.length > 5000) {
             input = input.substring(0, 5000);
         }
 
-        // HTML encode special characters (safe operations)
         return input
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
@@ -279,6 +168,15 @@ class InputValidator {
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#x27;')
             .replace(/\//g, '&#x2F;');
+    }
+
+    // Helper methods
+    createResult(isValid, errors, type) {
+        return { isValid, errors, type };
+    }
+
+    isTimeout(startTime, maxTime) {
+        return Date.now() - startTime > maxTime;
     }
 }
 
