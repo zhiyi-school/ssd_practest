@@ -13,7 +13,6 @@ RUN npm install --ignore-scripts
 COPY ./src/public ./public
 COPY ./src/server.js .
 COPY ./src/utils ./utils
-COPY ./src/data ./data
 
 # Change ownership of the app directory to the non-root user
 RUN chown -R appuser:appuser /usr/src/app

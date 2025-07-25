@@ -19,18 +19,61 @@ class InputValidator {
             /<[^>]*\s(on\w+|href|src)\s*=\s*['"]*javascript:/gi
         ];
 
-        // Common SQL injection patterns
+        // More specific SQL injection patterns - focus on actual SQL injection syntax
         this.sqlInjectionPatterns = [
-            /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|UNION|OR|AND)\b)/gi,
-            /('|(\\')|(;)|(\\;)|(\|\|)|(\/\*)|(--)|(\*\/)|(\|\|))/gi,
+            // Classic SQL injection patterns with quotes and operators
+            /('|\"|`)\s*(OR|AND)\s*('|\"|`)/gi,
+            /('|\"|`)\s*(OR|AND)\s*\d+\s*=\s*\d+/gi,
+            /('|\"|`)\s*(OR|AND)\s*\d+\s*<\s*\d+/gi,
+            /('|\"|`)\s*(OR|AND)\s*\d+\s*>\s*\d+/gi,
+            
+            // UNION based attacks
+            /UNION\s+(ALL\s+)?SELECT/gi,
+            /\'\s*UNION/gi,
+            /\"\s*UNION/gi,
+            
+            // Comment-based attacks
+            /;\s*--/gi,
+            /'\s*--/gi,
+            /"\s*--/gi,
+            /;\s*\/\*/gi,
+            /'\s*\/\*/gi,
+            /"\s*\/\*/gi,
+            
+            // Classic injection with quotes
+            /'\s*OR\s*'.*?'\s*=\s*'/gi,
+            /"\s*OR\s*".*?"\s*=\s*"/gi,
+            /'\s*OR\s*1\s*=\s*1/gi,
+            /"\s*OR\s*1\s*=\s*1/gi,
+            
+            // SQL commands with terminators
+            /;\s*(DROP|DELETE|UPDATE|INSERT|CREATE|ALTER)\s/gi,
+            /'\s*;\s*(DROP|DELETE|UPDATE|INSERT|CREATE|ALTER)/gi,
+            /"\s*;\s*(DROP|DELETE|UPDATE|INSERT|CREATE|ALTER)/gi,
+            
+            // Hex encoded attacks
             /((\%27)|(\'))\s*((\%6F)|o|(\%4F))\s*((\%72)|r|(\%52))/gi,
             /((\%27)|(\'))\s*((\%55)|u|(\%75))\s*((\%4E)|n|(\%6E))\s*((\%49)|i|(\%69))\s*((\%4F)|o|(\%6F))\s*((\%4E)|n|(\%6E))/gi,
+            
+            // Specific dangerous patterns
             /exec(\s|\+)+(s|x)p\w+/gi,
-            /UNION\s+(ALL\s+)?SELECT/gi,
-            /\b(OR|AND)\s+\d+\s*=\s*\d+/gi,
-            /\b(OR|AND)\s+['"]\w+['"]\s*=\s*['"]\w+['"]|/gi,
-            /\'\s*;\s*(DROP|DELETE|UPDATE|INSERT)/gi,
-            /\d\s*=\s*\d\s*--/gi
+            /sp_\w+/gi,
+            /xp_\w+/gi,
+            
+            // Boolean-based blind SQL injection
+            /\d+\s*=\s*\d+\s*--/gi,
+            /\d+\s*=\s*\d+\s*#/gi,
+            
+            // Time-based blind SQL injection
+            /WAITFOR\s+DELAY/gi,
+            /SLEEP\s*\(/gi,
+            /BENCHMARK\s*\(/gi,
+            
+            // Stacked queries
+            /;\s*SELECT/gi,
+            /;\s*INSERT/gi,
+            /;\s*UPDATE/gi,
+            /;\s*DELETE/gi
         ];
     }
 
@@ -78,9 +121,15 @@ class InputValidator {
     }
 
     containsSuspiciousPatterns(input) {
-        // Check for excessive special characters
-        const specialCharCount = (input.match(/[<>'";&|(){}[\]]/g) || []).length;
-        if (specialCharCount > input.length * 0.3) {
+        // Check for excessive special characters that might indicate an attack
+        const suspiciousChars = /[<>'";&|(){}[\]]{3,}/g;
+        if (suspiciousChars.test(input)) {
+            return true;
+        }
+
+        // Check for multiple SQL-like operators in sequence
+        const sqlOperators = /(=|<|>|!){2,}/g;
+        if (sqlOperators.test(input)) {
             return true;
         }
 

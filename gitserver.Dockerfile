@@ -14,7 +14,7 @@ WORKDIR /home/git
 # Initialize a bare repository
 RUN git init --bare labquiz-repo.git && \
     cd labquiz-repo.git && \
-    git config user.name "Tay Zhi Yi" && \
+    git config user.name "TAY ZHI YI" && \
     git config user.email "2301807@SIT.singaporetech.edu.sg"
 
 
