@@ -47,7 +47,7 @@ jobs:
       options: --network-alias=testserver
 
     env:
-      TEST_BASE_URL: http://testserver:80
+      TEST_BASE_URL: http://testserver
       SELENIUM_HOST: http://selenium:4444/wd/hub
 
     services:
