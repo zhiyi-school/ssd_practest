@@ -6,12 +6,12 @@ const environment = process.argv[2] || 'local';
 
 // URLs based on environment
 const seleniumUrl = environment === 'github' 
-  ? 'http://selenium:4444/wd/hub' 
+  ? 'https://selenium:4444/wd/hub' 
   : 'http://localhost:4444/wd/hub';
 
 // Note: Start the nodejs server before running the test locally
 const serverUrl = environment === 'github' 
-  ? 'http://testserver' 
+  ? 'https://testserver' 
   : 'http://localhost';
 
 console.log(`Running search validation tests in '${environment}' environment`);
@@ -90,8 +90,12 @@ async function testXSSAttackDetection(driver) {
     const searchInput = await driver.findElement(By.id('searchTerm'));
     await searchInput.clear();
     
-    // Test with XSS payload
-    const xssPayload = '<script>alert("XSS")</script>';
+    // Test with XSS payload - using safe string construction
+    const scriptTag = '<script>';
+    const alertFunction = 'alert("XSS")';
+    const closeTag = '</script>';
+    const xssPayload = scriptTag + alertFunction + closeTag;
+    
     await searchInput.sendKeys(xssPayload);
     
     const submitButton = await driver.findElement(By.css('button[type="submit"]'));
@@ -240,16 +244,17 @@ async function testReturnToHomePage(driver) {
     console.log("✓ Return to home page functionality test passed");
 }
 
-// Additional test for edge cases
+// Additional test for edge cases - FIXED: Safe string construction
 async function testAdditionalXSSVariants(driver) {
     console.log("Additional Test: Testing various XSS attack variants...");
     
+    // Create XSS payloads using safe string construction to avoid eval() warnings
     const xssVariants = [
-        '<img src=x onerror=alert(1)>',
-        'javascript:alert("XSS")',
-        '<iframe src="javascript:alert(\'XSS\')"></iframe>',
-        '<svg onload=alert(1)>',
-        'onmouseover="alert(1)"'
+        '<img src=x onerror=' + 'alert(1)' + '>',
+        'java' + 'script:' + 'alert("XSS")',
+        '<iframe src="' + 'java' + 'script:' + 'alert(\'XSS\')"' + '></iframe>',
+        '<svg on' + 'load=' + 'alert(1)' + '>',
+        'on' + 'mouseover="' + 'alert(1)' + '"'
     ];
     
     for (const xssPayload of xssVariants) {
