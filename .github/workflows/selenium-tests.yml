@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4  # Updated to v4 for security
+        uses: actions/checkout@v4 
 
       - name: Cache Node.js modules
         uses: actions/cache@v4
@@ -47,7 +47,7 @@ jobs:
       options: --network-alias=testserver
 
     env:
-      # Keep HTTP for internal container communication (acceptable for testing)
+      # Use HTTP for internal container communication (this is the fix)
       TEST_BASE_URL: http://testserver:80
       SELENIUM_HOST: http://selenium:4444/wd/hub
       # Add security-related environment variables
@@ -56,12 +56,11 @@ jobs:
 
     services:
       selenium:
-        image: selenium/standalone-chrome:latest  # Use latest for security updates
+        image: selenium/standalone-chrome:latest
         ports:
           - 4444:4444
         options: >-
           --shm-size=2gb
-          --name selenium-container
 
     steps:
       - name: Download built files
@@ -77,9 +76,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: List node_modules
-        run: ls -l node_modules
-
       - name: List files for debugging
         run: |
           echo "Current directory:"
@@ -91,9 +87,9 @@ jobs:
           echo "Files in the tests directory:"
           ls -ltra tests/
 
-      - name: Start Node.js server with security headers
+      - name: Start Node.js server
         run: |
-          # Start the server with proper security configurations
+          # Start the server
           nohup node src/server.js > server.log 2>&1 &
           sleep 5  # Give the server some time to start
 
@@ -110,17 +106,15 @@ jobs:
             exit 1; 
           }
 
-      - name: Wait for Selenium server to be up with retry logic
+      - name: Wait for Selenium server to be up
         run: |
           echo "Waiting for Selenium server..."
           for i in {1..15}; do
-            if curl -s --max-time 5 $SELENIUM_HOST/status | grep -q "ready"; then
+            if curl -s --max-time 5 http://selenium:4444/wd/hub/status | grep -q "ready"; then
               echo "Selenium server is ready"
               break
             elif [ $i -eq 15 ]; then
               echo "Selenium server failed to start after 15 attempts"
-              # Show Selenium logs for debugging
-              docker logs selenium-container || echo "Could not retrieve Selenium logs"
               exit 1
             else
               echo "Attempt $i: Selenium server not ready yet, waiting..."
@@ -131,18 +125,31 @@ jobs:
       - name: Verify Selenium server status
         run: |
           echo "Selenium server status:"
-          curl -s $SELENIUM_HOST/status || echo "Could not get Selenium status"
+          curl -s http://selenium:4444/wd/hub/status || echo "Could not get Selenium status"
 
-      - name: Run Selenium tests with enhanced error handling
+      - name: Debug network connectivity
         run: |
-          echo "Starting Selenium tests..."
+          echo "=== Network Debug Info ==="
+          echo "Testing connectivity to selenium:4444..."
+          nc -zv selenium 4444 || echo "Cannot connect to selenium:4444"
+          echo "Testing connectivity to localhost:80..."
+          nc -zv localhost 80 || echo "Cannot connect to localhost:80"
+          echo "Current hostname:"
+          hostname
+          echo "Network interfaces:"
+          ip addr show || ifconfig || echo "Could not show network info"
+
+      - name: Run Selenium tests with HTTP only
+        run: |
+          echo "Starting Selenium tests with HTTP..."
+          echo "Environment variables:"
+          echo "SELENIUM_HOST: $SELENIUM_HOST"
+          echo "TEST_BASE_URL: $TEST_BASE_URL"
           # Run tests with timeout and proper error handling
           timeout 300 node tests/SeleniumTest.mjs github || {
             echo "Tests failed or timed out"
             echo "Server logs:"
             cat server.log
-            echo "Selenium container logs:"
-            docker logs selenium-container || echo "Could not retrieve Selenium logs"
             exit 1
           }
 
@@ -156,5 +163,3 @@ jobs:
           echo "NPM version: $(npm --version)"
           echo "Container info:"
           df -h
-          echo "Network info:"
-          ip addr show || echo "Could not show network info"
