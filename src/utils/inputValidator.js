@@ -13,7 +13,7 @@ class InputValidator {
             /<[^>]{0,200}\s(?:on\w+|href|src)\s{0,5}=\s{0,5}['"]{0,3}javascript:/gi
         ];
 
-        // Simplified SQL injection patterns
+        // Simplified SQL injection patterns - FIXED: Corrected character class
         this.sqlInjectionPatterns = [
             /['"`]\s{0,5}(?:OR|AND)\s{0,5}['"`\d]/gi,
             /UNION\s+(?:ALL\s+)?SELECT/gi,
@@ -21,7 +21,7 @@ class InputValidator {
             /[;'"]\s{0,5}(?:DROP|DELETE|UPDATE|INSERT|CREATE|ALTER)/gi,
             /(?:%27|')\s{0,5}(?:%6F|o)\s{0,5}(?:%72|r)/gi,
             /exec\s+[sx]p\w+/gi,
-            /\d{1,10}\s{0,3}=\s{0,3}\d{1,10}\s{0,3}[--#]/gi,
+            /\d{1,10}\s{0,3}=\s{0,3}\d{1,10}\s{0,3}[-#]/gi,  // FIXED: Changed [--#] to [-#]
             /(?:WAITFOR\s+DELAY|SLEEP\s{0,3}\(|BENCHMARK\s{0,3}\()/gi,
             /;\s{0,5}(?:SELECT|INSERT|UPDATE|DELETE)/gi
         ];
