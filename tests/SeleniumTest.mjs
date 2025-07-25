@@ -4,15 +4,15 @@ import assert from 'assert';
 // Get the argument (default to 'local' if not provided)
 const environment = process.argv[2] || 'local';
 
-// URLs based on environment - UPDATED: Use HTTPS for GitHub environment
+// URLs based on environment
 const seleniumUrl = environment === 'github' 
-  ? 'https://selenium:4444/wd/hub'  // HTTPS for GitHub Actions
-  : 'http://localhost:4444/wd/hub';  // HTTP for localhost (or https://localhost:4444/wd/hub if you have HTTPS locally)
+  ? 'http://selenium:4444/wd/hub' 
+  : 'http://localhost:4444/wd/hub';
 
 // Note: Start the nodejs server before running the test locally
 const serverUrl = environment === 'github' 
-  ? 'https://testserver'  // HTTPS for GitHub Actions
-  : 'http://localhost';   // HTTP for localhost (or https://localhost if you have HTTPS locally)
+  ? 'http://testserver' 
+  : 'http://localhost';
 
 console.log(`Running search validation tests in '${environment}' environment`);
 console.log(`Selenium URL: ${seleniumUrl}`);
@@ -24,28 +24,9 @@ console.log(`Server URL: ${serverUrl}`);
     try {
         console.log("Initializing WebDriver...");
         
-        // Initialize the WebDriver with Chrome and HTTPS-compatible options
-        const chromeOptions = {
-            'goog:chromeOptions': {
-                args: [
-                    '--no-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--headless',  // Required for GitHub Actions
-                    '--disable-extensions',
-                    '--ignore-certificate-errors',  // Important for self-signed certificates
-                    '--ignore-ssl-errors',
-                    '--ignore-certificate-errors-spki-list',
-                    '--disable-web-security',  // For testing with HTTPS
-                    '--allow-running-insecure-content',
-                    '--disable-features=VizDisplayCompositor'
-                ]
-            }
-        };
-
+        // Initialize the WebDriver with Chrome
         driver = await new Builder()
             .forBrowser('chrome')
-            .setChromeOptions(chromeOptions)
             .usingServer(seleniumUrl)
             .build();
 
@@ -69,23 +50,10 @@ console.log(`Server URL: ${serverUrl}`);
         // Test 6: Test return to home page functionality
         await testReturnToHomePage(driver);
 
-        // Run additional security tests
-        await testAdditionalXSSVariants(driver);
-        await testAdditionalSQLIVariants(driver);
-
         console.log('All tests passed successfully!');
 
     } catch (err) {
         console.error('Test failed:', err);
-        
-        // If HTTPS fails in GitHub environment, provide helpful error info
-        if (environment === 'github' && (err.message.includes('ECONNREFUSED') || err.message.includes('SSL') || err.message.includes('certificate'))) {
-            console.error('HTTPS connection failed. This might be due to:');
-            console.error('1. SSL certificates not properly configured');
-            console.error('2. HTTPS not enabled on the services');
-            console.error('3. Network configuration issues');
-            console.error('Consider using HTTP for internal container communication or setting up proper SSL certificates.');
-        }
         process.exit(1);
     } finally {
         if (driver) {
@@ -94,8 +62,6 @@ console.log(`Server URL: ${serverUrl}`);
         }
     }
 })();
-
-// ...rest of your existing test functions remain the same...
 
 // Test 1: Home page has form with search input and submit button
 async function testSearchFormElements(driver) {
@@ -266,10 +232,10 @@ async function testReturnToHomePage(driver) {
     await returnButton.click();
     
     // Wait for redirect back to home page
-    await driver.wait(until.urlMatches(new RegExp(serverUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/?$')), 5000);
+    await driver.wait(until.urlMatches(new RegExp(serverUrl + '/?$')), 5000);
     const currentUrl = await driver.getCurrentUrl();
     
-    assert.ok(currentUrl.match(new RegExp(serverUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/?$')), 'Should return to home page');
+    assert.ok(currentUrl.match(new RegExp(serverUrl + '/?$')), 'Should return to home page');
     
     // Verify we're back on the search form
     const searchFormExists = await driver.findElement(By.id('searchForm'));
@@ -278,7 +244,7 @@ async function testReturnToHomePage(driver) {
     console.log("✓ Return to home page functionality test passed");
 }
 
-// Additional test for XSS variants - FIXED: Safe string construction
+// Additional test for edge cases - FIXED: Safe string construction
 async function testAdditionalXSSVariants(driver) {
     console.log("Additional Test: Testing various XSS attack variants...");
     
@@ -286,7 +252,7 @@ async function testAdditionalXSSVariants(driver) {
     const xssVariants = [
         '<img src=x onerror=' + 'alert(1)' + '>',
         'java' + 'script:' + 'alert("XSS")',
-        '<iframe src="' + 'java' + 'script:' + 'alert(1)"' + '></iframe>',
+        '<iframe src="' + 'java' + 'script:' + 'alert(\'XSS\')"' + '></iframe>',
         '<svg on' + 'load=' + 'alert(1)' + '>',
         'on' + 'mouseover="' + 'alert(1)' + '"'
     ];

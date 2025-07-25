@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
 
       - name: Cache Node.js modules
         uses: actions/cache@v4
@@ -43,27 +43,18 @@ jobs:
     container:
       image: node:20
       ports:
-        - 8443:8443  # Custom HTTPS port
-        - 8080:8080  # Custom HTTP port (fallback)
+        - 80:80
       options: --network-alias=testserver
 
     env:
-      # HTTPS URLs for secure communication - using custom ports
-      TEST_BASE_URL: https://testserver:8443
-      SELENIUM_HOST: http://selenium:4444/wd/hub  # Selenium uses HTTP by default
-      NODE_ENV: test
-      SELENIUM_TIMEOUT: 30000
-      # Custom ports to avoid conflicts
-      HTTPS_PORT: 8443
-      HTTP_PORT: 8080
+      TEST_BASE_URL: http://testserver:80
+      SELENIUM_HOST: http://selenium:4444/wd/hub
 
     services:
       selenium:
-        image: selenium/standalone-chrome:latest
+        image: selenium/standalone-chrome
         ports:
           - 4444:4444
-        options: >-
-          --shm-size=2gb
 
     steps:
       - name: Download built files
@@ -79,102 +70,37 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Generate self-signed SSL certificate for testing
-        run: |
-          mkdir -p ssl
-          openssl req -x509 -newkey rsa:4096 -keyout ssl/key.pem -out ssl/cert.pem -days 1 -nodes -subj "/C=US/ST=Test/L=Test/O=Test/OU=Test/CN=testserver"
-          chmod 600 ssl/key.pem
-          chmod 644 ssl/cert.pem
-          ls -la ssl/
+      - name: List node_modules
+        run: ls -l node_modules
 
-      - name: Check what's using port 80
+      - name: List files for debugging
         run: |
-          echo "Checking port usage..."
-          netstat -tulpn | grep ":80 " || echo "Port 80 not in use"
-          netstat -tulpn | grep ":443 " || echo "Port 443 not in use"
-          netstat -tulpn | grep ":8080 " || echo "Port 8080 not in use"
-          netstat -tulpn | grep ":8443 " || echo "Port 8443 not in use"
+          echo "Current directory:"
+          pwd
+          echo "Files in the current directory:"
+          ls -ltra .
+          echo "Files in the src directory:"
+          ls -ltra src/
+          echo "Files in the tests directory:"
+          ls -ltra tests/
 
-      - name: Start Node.js server with HTTPS
+      - name: Start Node.js server
         run: |
-          echo "Starting server with custom ports..."
-          echo "HTTPS_PORT: $HTTPS_PORT"
-          echo "HTTP_PORT: $HTTP_PORT"
-          nohup node src/server.js > server.log 2>&1 &
-          sleep 5
+          nohup node src/server.js > server.log 2>&1 &  # Start the server in the background
+          sleep 5  # Give the server some time to start
 
       - name: Show server logs
         run: cat server.log
 
-      - name: Verify HTTPS server is running
+      - name: Verify server is running
         run: |
-          echo "Testing server connectivity..."
-          # Test HTTPS server with certificate verification disabled for testing
-          timeout 10 curl -k -f https://localhost:8443 || { 
-            echo "HTTPS server on port 8443 failed"; 
-            echo "Trying HTTP fallback on port 8080...";
-            timeout 10 curl -f http://localhost:8080 || {
-              echo "Both HTTPS and HTTP failed";
-              echo "Server logs:"; 
-              cat server.log;
-              echo "Active network connections:";
-              netstat -tulpn | head -20;
-              exit 1; 
-            }
-          }
+          curl -f http://localhost:80 || { echo "Server failed to start"; exit 1; }
 
       - name: Wait for Selenium server to be up
         run: |
-          echo "Waiting for Selenium server..."
-          for i in {1..15}; do
-            # Selenium typically only supports HTTP
-            if curl -s --max-time 5 http://selenium:4444/wd/hub/status | grep -q "ready"; then
-              echo "Selenium HTTP server is ready"
-              break
-            elif [ $i -eq 15 ]; then
-              echo "Selenium server failed to start after 15 attempts"
-              echo "Trying to get Selenium status..."
-              curl -v http://selenium:4444/wd/hub/status || echo "Could not connect to Selenium"
-              exit 1
-            else
-              echo "Attempt $i: Selenium server not ready yet, waiting..."
-              sleep 3
-            fi
+          for i in {1..10}; do
+            curl -s $SELENIUM_HOST && break || sleep 3
           done
 
-      - name: Debug network connectivity
-        run: |
-          echo "=== Network Debug Info ==="
-          echo "Testing connectivity to selenium:4444..."
-          nc -zv selenium 4444 || echo "Cannot connect to selenium:4444"
-          echo "Testing connectivity to localhost:8443..."
-          nc -zv localhost 8443 || echo "Cannot connect to localhost:8443"
-          echo "Testing connectivity to localhost:8080..."
-          nc -zv localhost 8080 || echo "Cannot connect to localhost:8080"
-          echo "Current network connections:"
-          netstat -tulpn | grep -E "(8080|8443|4444)" || echo "No connections found on expected ports"
-
-      - name: Run Selenium tests with HTTPS
-        run: |
-          echo "Starting Selenium tests..."
-          echo "Environment variables:"
-          echo "SELENIUM_HOST: $SELENIUM_HOST"
-          echo "TEST_BASE_URL: $TEST_BASE_URL"
-          timeout 300 node tests/SeleniumTest.mjs github || {
-            echo "Tests failed or timed out"
-            echo "Server logs:"
-            cat server.log
-            echo "Network status:"
-            netstat -tulpn | head -20
-            exit 1
-          }
-
-      - name: Cleanup and show final logs
-        if: always()
-        run: |
-          echo "=== Final Server Logs ==="
-          cat server.log || echo "No server logs found"
-          echo "=== SSL Certificate Info ==="
-          ls -la ssl/ || echo "No SSL directory found"
-          echo "=== Final Network Status ==="
-          netstat -tulpn | head -20 || echo "Could not get network status"
+      - name: Run Selenium tests
+        run: node tests/SeleniumTest.mjs github
