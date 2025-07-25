@@ -14,11 +14,11 @@ const serverUrl = environment === 'github'
   ? 'http://testserver' 
   : 'http://localhost';
 
-console.log(`Running password validation tests in '${environment}' environment`);
+console.log(`Running search validation tests in '${environment}' environment`);
 console.log(`Selenium URL: ${seleniumUrl}`);
 console.log(`Server URL: ${serverUrl}`);
 
-(async function runPasswordValidationTests() {
+(async function runSearchValidationTests() {
     let driver;
 
     try {
@@ -32,23 +32,23 @@ console.log(`Server URL: ${serverUrl}`);
 
         console.log("WebDriver initialized successfully");
 
-        // Test 1: Check if password input and login button exist
-        await testFormElements(driver);
+        // Test 1: Check if search input and submit button exist
+        await testSearchFormElements(driver);
         
-        // Test 2: Test short password rejection
-        await testShortPassword(driver);
+        // Test 2: Test XSS attack detection and input clearing
+        await testXSSAttackDetection(driver);
         
-        // Test 3: Test common password rejection
-        await testCommonPassword(driver);
+        // Test 3: Test SQL injection attack detection and input clearing
+        await testSQLInjectionDetection(driver);
         
-        // Test 4: Test valid password login
-        await testValidPassword(driver);
+        // Test 4: Test valid search input goes to results page
+        await testValidSearchInput(driver);
         
-        // Test 5: Test welcome page elements
-        await testWelcomePage(driver);
+        // Test 5: Test results page elements and return button
+        await testResultsPage(driver);
         
-        // Test 6: Test logout functionality
-        await testLogout(driver);
+        // Test 6: Test return to home page functionality
+        await testReturnToHomePage(driver);
 
         console.log('All tests passed successfully!');
 
@@ -63,130 +63,253 @@ console.log(`Server URL: ${serverUrl}`);
     }
 })();
 
-// Test 1: Home page has form with password input and login button
-async function testFormElements(driver) {
-    console.log("Test 1: Checking form elements...");
+// Test 1: Home page has form with search input and submit button
+async function testSearchFormElements(driver) {
+    console.log("Test 1: Checking search form elements...");
     
     await driver.get(serverUrl);
     
-    const passwordInput = await driver.findElement(By.id('password'));
-    const loginButton = await driver.findElement(By.css('button[type="submit"]'));
+    const searchInput = await driver.findElement(By.id('searchTerm'));
+    const submitButton = await driver.findElement(By.css('button[type="submit"]'));
     
-    assert.ok(passwordInput, 'Password input field should exist');
-    assert.ok(loginButton, 'Login button should exist');
+    assert.ok(searchInput, 'Search input field should exist');
+    assert.ok(submitButton, 'Submit button should exist');
     
-    console.log("✓ Form elements test passed");
+    const buttonText = await submitButton.getText();
+    assert.ok(buttonText.toLowerCase().includes('submit'), 'Button should be a submit button');
+    
+    console.log("✓ Search form elements test passed");
 }
 
-// Test 2: OWASP password requirements - minimum 8 characters
-async function testShortPassword(driver) {
-    console.log("Test 2: Testing short password rejection...");
+// Test 2: XSS attack detection - input should be cleared and remain on home page
+async function testXSSAttackDetection(driver) {
+    console.log("Test 2: Testing XSS attack detection...");
     
     await driver.get(serverUrl);
     
-    const passwordInput = await driver.findElement(By.id('password'));
-    await passwordInput.clear();
-    await passwordInput.sendKeys('1234567'); // 7 characters
+    const searchInput = await driver.findElement(By.id('searchTerm'));
+    await searchInput.clear();
     
-    const loginButton = await driver.findElement(By.css('button[type="submit"]'));
-    await loginButton.click();
+    // Test with XSS payload
+    const xssPayload = '<script>alert("XSS")</script>';
+    await searchInput.sendKeys(xssPayload);
     
+    const submitButton = await driver.findElement(By.css('button[type="submit"]'));
+    await submitButton.click();
+    
+    // Wait for error message to appear
     const errorElement = await driver.wait(until.elementLocated(By.className('error')), 5000);
     const errorText = await errorElement.getText();
     
-    assert.ok(errorText.includes('8'), 'Error message should mention 8 characters');
+    // Check that error mentions XSS
+    assert.ok(errorText.toLowerCase().includes('xss'), 'Error message should mention XSS attack');
     
-    console.log("✓ Short password rejection test passed");
+    // Check that input field is cleared
+    const inputValue = await searchInput.getAttribute('value');
+    assert.strictEqual(inputValue, '', 'Input field should be cleared after XSS detection');
+    
+    // Check that we're still on the home page
+    const currentUrl = await driver.getCurrentUrl();
+    assert.ok(currentUrl === serverUrl || currentUrl === serverUrl + '/', 'Should remain on home page');
+    
+    console.log("✓ XSS attack detection test passed");
 }
 
-// Test 3: Block common passwords
-async function testCommonPassword(driver) {
-    console.log("Test 3: Testing common password rejection...");
+// Test 3: SQL injection attack detection - input should be cleared and remain on home page
+async function testSQLInjectionDetection(driver) {
+    console.log("Test 3: Testing SQL injection attack detection...");
     
     await driver.get(serverUrl);
     
-    const passwordInput = await driver.findElement(By.id('password'));
-    await passwordInput.clear();
-    await passwordInput.sendKeys('password');
+    const searchInput = await driver.findElement(By.id('searchTerm'));
+    await searchInput.clear();
     
-    const loginButton = await driver.findElement(By.css('button[type="submit"]'));
-    await loginButton.click();
+    // Test with SQL injection payload
+    const sqlPayload = "'; DROP TABLE users; --";
+    await searchInput.sendKeys(sqlPayload);
     
+    const submitButton = await driver.findElement(By.css('button[type="submit"]'));
+    await submitButton.click();
+    
+    // Wait for error message to appear
     const errorElement = await driver.wait(until.elementLocated(By.className('error')), 5000);
     const errorText = await errorElement.getText();
     
-    assert.ok(errorText.includes('common'), 'Error message should mention common password');
+    // Check that error mentions SQL injection
+    assert.ok(errorText.toLowerCase().includes('sql'), 'Error message should mention SQL injection attack');
     
-    console.log("✓ Common password rejection test passed");
+    // Check that input field is cleared
+    const inputValue = await searchInput.getAttribute('value');
+    assert.strictEqual(inputValue, '', 'Input field should be cleared after SQL injection detection');
+    
+    // Check that we're still on the home page
+    const currentUrl = await driver.getCurrentUrl();
+    assert.ok(currentUrl === serverUrl || currentUrl === serverUrl + '/', 'Should remain on home page');
+    
+    console.log("✓ SQL injection detection test passed");
 }
 
-// Test 4: Valid password goes to welcome page
-async function testValidPassword(driver) {
-    console.log("Test 4: Testing valid password login...");
+// Test 4: Valid search input goes to results page
+async function testValidSearchInput(driver) {
+    console.log("Test 4: Testing valid search input...");
     
     await driver.get(serverUrl);
     
-    const passwordInput = await driver.findElement(By.id('password'));
-    await passwordInput.clear();
-    await passwordInput.sendKeys('ValidPass123!');
+    const searchInput = await driver.findElement(By.id('searchTerm'));
+    await searchInput.clear();
+    await searchInput.sendKeys('valid search term');
     
-    const loginButton = await driver.findElement(By.css('button[type="submit"]'));
-    await loginButton.click();
+    const submitButton = await driver.findElement(By.css('button[type="submit"]'));
+    await submitButton.click();
     
-    await driver.wait(until.urlContains('welcome'), 10000);
+    // Wait for redirect to results page
+    await driver.wait(until.urlContains('results'), 10000);
     const currentUrl = await driver.getCurrentUrl();
     
-    assert.ok(currentUrl.includes('welcome'), 'Should redirect to welcome page');
+    assert.ok(currentUrl.includes('results'), 'Should redirect to results page');
+    assert.ok(currentUrl.includes('search='), 'URL should contain search parameter');
     
-    console.log("✓ Valid password login test passed");
+    console.log("✓ Valid search input test passed");
 }
 
-// Test 5: Welcome page shows password and has logout button
-async function testWelcomePage(driver) {
-    console.log("Test 5: Testing welcome page elements...");
+// Test 5: Results page shows search term and has return button
+async function testResultsPage(driver) {
+    console.log("Test 5: Testing results page elements...");
     
     await driver.get(serverUrl);
     
-    const passwordInput = await driver.findElement(By.id('password'));
-    await passwordInput.clear();
-    await passwordInput.sendKeys('TestPass123!');
+    const searchInput = await driver.findElement(By.id('searchTerm'));
+    await searchInput.clear();
     
-    const loginButton = await driver.findElement(By.css('button[type="submit"]'));
-    await loginButton.click();
+    const testSearchTerm = 'test search query';
+    await searchInput.sendKeys(testSearchTerm);
     
-    await driver.wait(until.urlContains('welcome'), 10000);
+    const submitButton = await driver.findElement(By.css('button[type="submit"]'));
+    await submitButton.click();
     
-    const passwordDisplay = await driver.findElement(By.id('passwordDisplay'));
-    const logoutButton = await driver.findElement(By.id('logoutBtn'));
+    // Wait for redirect to results page
+    await driver.wait(until.urlContains('results'), 10000);
     
-    assert.ok(passwordDisplay, 'Password display element should exist');
-    assert.ok(logoutButton, 'Logout button should exist');
+    // Check that search term is displayed
+    const searchDisplay = await driver.findElement(By.id('searchDisplay'));
+    const displayedText = await searchDisplay.getText();
     
-    console.log("✓ Welcome page elements test passed");
+    assert.ok(displayedText.includes(testSearchTerm), 'Results page should display the search term');
+    
+    // Check that return button exists
+    const returnButton = await driver.findElement(By.id('backBtn'));
+    assert.ok(returnButton, 'Return button should exist');
+    
+    const buttonText = await returnButton.getText();
+    assert.ok(buttonText.toLowerCase().includes('home') || buttonText.toLowerCase().includes('return'), 
+              'Button should indicate return to home functionality');
+    
+    console.log("✓ Results page elements test passed");
 }
 
-// Test 6: Logout returns to home page
-async function testLogout(driver) {
-    console.log("Test 6: Testing logout functionality...");
+// Test 6: Return button goes back to home page
+async function testReturnToHomePage(driver) {
+    console.log("Test 6: Testing return to home page functionality...");
     
     await driver.get(serverUrl);
     
-    const passwordInput = await driver.findElement(By.id('password'));
-    await passwordInput.clear();
-    await passwordInput.sendKeys('LogoutTest123!');
+    const searchInput = await driver.findElement(By.id('searchTerm'));
+    await searchInput.clear();
+    await searchInput.sendKeys('return test query');
     
-    const loginButton = await driver.findElement(By.css('button[type="submit"]'));
-    await loginButton.click();
+    const submitButton = await driver.findElement(By.css('button[type="submit"]'));
+    await submitButton.click();
     
-    await driver.wait(until.urlContains('welcome'), 10000);
+    // Wait for redirect to results page
+    await driver.wait(until.urlContains('results'), 10000);
     
-    const logoutButton = await driver.findElement(By.id('logoutBtn'));
-    await logoutButton.click();
+    // Click return button
+    const returnButton = await driver.findElement(By.id('backBtn'));
+    await returnButton.click();
     
+    // Wait for redirect back to home page
     await driver.wait(until.urlMatches(new RegExp(serverUrl + '/?$')), 5000);
     const currentUrl = await driver.getCurrentUrl();
     
     assert.ok(currentUrl.match(new RegExp(serverUrl + '/?$')), 'Should return to home page');
     
-    console.log("✓ Logout functionality test passed");
+    // Verify we're back on the search form
+    const searchFormExists = await driver.findElement(By.id('searchForm'));
+    assert.ok(searchFormExists, 'Should be back on page with search form');
+    
+    console.log("✓ Return to home page functionality test passed");
+}
+
+// Additional test for edge cases
+async function testAdditionalXSSVariants(driver) {
+    console.log("Additional Test: Testing various XSS attack variants...");
+    
+    const xssVariants = [
+        '<img src=x onerror=alert(1)>',
+        'javascript:alert("XSS")',
+        '<iframe src="javascript:alert(\'XSS\')"></iframe>',
+        '<svg onload=alert(1)>',
+        'onmouseover="alert(1)"'
+    ];
+    
+    for (const xssPayload of xssVariants) {
+        await driver.get(serverUrl);
+        
+        const searchInput = await driver.findElement(By.id('searchTerm'));
+        await searchInput.clear();
+        await searchInput.sendKeys(xssPayload);
+        
+        const submitButton = await driver.findElement(By.css('button[type="submit"]'));
+        await submitButton.click();
+        
+        // Wait for error message
+        const errorElement = await driver.wait(until.elementLocated(By.className('error')), 5000);
+        const errorText = await errorElement.getText();
+        
+        assert.ok(errorText.toLowerCase().includes('xss') || errorText.toLowerCase().includes('malicious'), 
+                  `XSS variant should be detected: ${xssPayload}`);
+        
+        // Check input is cleared
+        const inputValue = await searchInput.getAttribute('value');
+        assert.strictEqual(inputValue, '', `Input should be cleared for XSS variant: ${xssPayload}`);
+    }
+    
+    console.log("✓ Additional XSS variants test passed");
+}
+
+// Additional test for SQL injection variants
+async function testAdditionalSQLIVariants(driver) {
+    console.log("Additional Test: Testing various SQL injection attack variants...");
+    
+    const sqlVariants = [
+        "1' OR '1'='1",
+        "admin'; --",
+        "1' UNION SELECT * FROM users--",
+        "'; DROP DATABASE test; --",
+        "1' OR 1=1#"
+    ];
+    
+    for (const sqlPayload of sqlVariants) {
+        await driver.get(serverUrl);
+        
+        const searchInput = await driver.findElement(By.id('searchTerm'));
+        await searchInput.clear();
+        await searchInput.sendKeys(sqlPayload);
+        
+        const submitButton = await driver.findElement(By.css('button[type="submit"]'));
+        await submitButton.click();
+        
+        // Wait for error message
+        const errorElement = await driver.wait(until.elementLocated(By.className('error')), 5000);
+        const errorText = await errorElement.getText();
+        
+        assert.ok(errorText.toLowerCase().includes('sql') || errorText.toLowerCase().includes('injection') || errorText.toLowerCase().includes('malicious'), 
+                  `SQL injection variant should be detected: ${sqlPayload}`);
+        
+        // Check input is cleared
+        const inputValue = await searchInput.getAttribute('value');
+        assert.strictEqual(inputValue, '', `Input should be cleared for SQL injection variant: ${sqlPayload}`);
+    }
+    
+    console.log("✓ Additional SQL injection variants test passed");
 }
